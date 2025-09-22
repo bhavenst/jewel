@@ -22,6 +22,7 @@ name: SonarCloud
 on:
   workflow_run:
     workflows:
+      - Unit Tests
       - CI
     types:
       - completed
@@ -115,21 +116,21 @@ jobs:
         run: |
           echo "🔍 SonarCloud Analysis Decision Summary"
           echo "========================================"
-          
+
           # Check CI Event type
           if [ "${{ env.EVENT_TYPE }}" = "pull_request" ]; then
             echo "├── CI Event: ✅ Pull Request"
-            
+
             # Check backport labels (only for PRs)
             if [ "${{ env.PR_NUMBER }}" != "0" ]; then
               echo "├── Backport Label: ➖ N/A (Skip check for workflow_dispatch)"
-              
+
               # Check Python changes for PRs
               files=$(gh api repos/${{ env.REPO_NAME }}/pulls/${{ env.PR_NUMBER }}/files --jq '.[].filename')
-              
+
               # Get file extensions for summary
               extensions=$(echo "$files" | sed 's/.*\.//' | sort | uniq | tr '\n' ',' | sed 's/,$//')
-              
+
               # Check if any Python files were changed
               python_files=$(echo "$files" | grep '\.py$' || true)
               if [ -z "$python_files" ]; then

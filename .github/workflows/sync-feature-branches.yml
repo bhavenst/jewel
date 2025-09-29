@@ -69,6 +69,7 @@ env:
 
 jobs:
   sync-branches:
+    if: github.repository == 'ansible-automation-platform/aap-gateway'
     runs-on: ubuntu-latest
     permissions:
       contents: write

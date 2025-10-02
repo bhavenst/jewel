@@ -1,11 +1,12 @@
 # JUnit Upload Workflow for aap-gateway
 #
-# This workflow is triggered by the Unit Tests workflow completion.
+# This workflow is triggered by the Unit Tests workflow completion on the devel branch.
+# Test results must be uploaded for each commit merged into the repository's main default branch.
 #
 # Steps overview:
 # 1. Download JUnit results from Unit Tests workflow
 # 2. Extract commit and repository information
-# 3. Upload JUnit XML test results
+# 3. Upload JUnit XML test results (production) or show command (debug repo)
 #
 
 name: JUnit Upload
@@ -20,10 +21,11 @@ jobs:
   junit-upload:
     name: Upload JUnit XML test results
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'pull_request'
+    if: |
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'devel' &&
+      (github.repository == 'ansible-automation-platform/aap-gateway' || github.repository == 'ansible-automation-platform/aap-gateway-debug')
     steps:
-      - uses: actions/checkout@v4
-
       # Download JUnit results from workflow_run
       - name: Download results artifact
         uses: dawidd6/action-download-artifact@246dbf436b23d7c49e21a7ab8204ca9ecd1fe615
@@ -42,12 +44,35 @@ jobs:
           echo "COMMIT_SHA=$WORKFLOW_RUN_HEAD_SHA" >> $GITHUB_ENV
           echo "REPO_NAME=$WORKFLOW_RUN_REPO_NAME" >> $GITHUB_ENV
 
-      - name: Upload jUnit XML test results
+      - name: Upload jUnit XML test results (Production)
+        if: github.repository == 'ansible-automation-platform/aap-gateway'
+        env:
+          UPLOAD_USER: ${{ vars.PDE_ORG_RESULTS_AGGREGATOR_UPLOAD_USER }}
+          UPLOAD_PASSWORD: ${{ secrets.PDE_ORG_RESULTS_UPLOAD_PASSWORD }}
+          UPLOAD_URL: ${{ vars.PDE_ORG_RESULTS_AGGREGATOR_UPLOAD_URL }}
         run: >-
           curl -v --fail-with-body
-          --user "${{ vars.PDE_ORG_RESULTS_AGGREGATOR_UPLOAD_USER }}:${{ secrets.PDE_ORG_RESULTS_UPLOAD_PASSWORD }}"
+          --user "${UPLOAD_USER}:${UPLOAD_PASSWORD}"
           --form "xunit_xml=@aap-gateway-test-results.xml"
           --form "component_name=aap-gateway"
           --form "git_commit_sha=${{ env.COMMIT_SHA }}"
           --form "git_repository_url=https://github.com/${{ env.REPO_NAME }}"
-          "${{ vars.PDE_ORG_RESULTS_AGGREGATOR_UPLOAD_URL }}"
+          "${UPLOAD_URL}"
+
+      - name: Show upload command (Debug Repository)
+        if: github.repository == 'ansible-automation-platform/aap-gateway-debug'
+        run: |
+          echo "🔍 Debug mode: Would have uploaded test results with the following parameters:"
+          echo "  Component: aap-gateway"
+          echo "  Commit SHA: ${{ env.COMMIT_SHA }}"
+          echo "  Repository: https://github.com/${{ env.REPO_NAME }}"
+          echo "  Test Results File: aap-gateway-test-results.xml"
+          echo ""
+          echo "Command structure (credentials redacted):"
+          echo "  curl -v --fail-with-body \\"
+          echo "    --user \"<UPLOAD_USER>:<UPLOAD_PASSWORD>\" \\"
+          echo "    --form \"xunit_xml=@aap-gateway-test-results.xml\" \\"
+          echo "    --form \"component_name=aap-gateway\" \\"
+          echo "    --form \"git_commit_sha=${{ env.COMMIT_SHA }}\" \\"
+          echo "    --form \"git_repository_url=https://github.com/${{ env.REPO_NAME }}\" \\"
+          echo "    \"<UPLOAD_URL>\""

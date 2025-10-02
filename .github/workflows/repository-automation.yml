@@ -7,11 +7,11 @@ on:
   workflow_run:
     workflows: ["Repository Automation: Trigger"]
     types: [completed]
-  
+
   # Scheduled events for stale detection
   schedule:
     - cron: '0 2 * * *'  # Daily at 2 AM UTC
-  
+
   # Manual trigger for testing
   workflow_dispatch:
     inputs:
@@ -34,7 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     # IMPORTANT: This repository reference gets updated by the test setup
     if: github.repository == 'ansible-automation-platform/aap-gateway'
-    
+
     steps:
       - name: Repository Automation
         uses: thenets/repo-automation@9e9603cd66620a201d222e7f63a649110bc9ecfe # v1.0.1
@@ -42,7 +42,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           custom-github-token: ${{ secrets.GHA_LABELS_AUTOMATION }}
           dry-run: ${{ github.event.inputs.dry-run || 'false' }}
-          
+
           # Enable all features for comprehensive testing
           accepted-releases: '["2.5", "2.6", "2.7", "devel"]'
           accepted-backports: '["2.5", "2.6", "devel"]'

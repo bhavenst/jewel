@@ -8,17 +8,13 @@
 
 # AAP Services Gateway
 
-The goal for a platform wide gateway is to provide a single entry point that sits in front of all the services within AAP. Right now there are a couple issues with how authentication is achieved within the platform:
+The goal for a platform wide gateway is to provide a single entry point that sits in front of all the services within AAP.
 
-* [JIRA Epic](https://issues.redhat.com/browse/ANSTRAT-37)
 * [JIRA Plan View](https://issues.redhat.com/secure/PortfolioReportView.jspa?r=Jivql#plan/backlog)
-* [POC Code](https://github.com/ansible/aap-gateway-poc)
 * [Google Drive](https://drive.google.com/drive/u/0/folders/18HxXa1K7Joeicnx43RCVVlhWHDnXf-Cx)
 * [Miro Arch Diagrams](https://miro.com/app/board/uXjVM3achZw=/)
 * [Miro Auth Brainstorming](https://miro.com/app/board/uXjVM2exfpo=/)
 
-
-Gateway is currently in design phase, more information will be available later.
 
 This repo is internal only at this time.
 
@@ -55,18 +51,18 @@ Configure your proxy routes to the local gateway, controller, hub and eda instan
 
   * Generate a tools/generated/proxy.yml file.
   * * Run command `make tools/generated/proxy.yml`.
-  * * File is based on sample configuration [tools/ansible/roles/proxy-config/templates/proxy.yml.j2](tools/ansible/roles/proxy-config/templates/proxy.yml.j2) 
+  * * File is based on sample configuration [tools/ansible/roles/proxy-config/templates/proxy.yml.j2](tools/ansible/roles/proxy-config/templates/proxy.yml.j2)
   * Modify endpoints in tools/generated/proxy.yml according to comments
 
 This will be used to create the envoy configuration from [tools/configs/envoy.yml](tools/configs/envoy.yml).
 
-### Run the environment 
+### Run the environment
 
 * Log into quay.io: `docker login quay.io`
 * Start up your environment: `make docker-compose`
   * Alternatively, you can split it into standalone steps:
     * `make docker-compose-basic` - Build & run the gateway containers
-    * `make register-services` - Configure the proxy 
+    * `make register-services` - Configure the proxy
     * `make plumb` - Plumb the side cars (below)
 
 This will:
@@ -75,7 +71,7 @@ This will:
     - You can force your own password by setting the `ADMIN_PASSWORD` environment variable before running `make docker-compose`.
 - `make register-services`:
   - create http ports, services and routes you have defined in your `proxy.yml` file
-- `make plumb`: 
+- `make plumb`:
   - plumb (connects) containers enabled in `container-startup.yml` (mode detailed in chapters below):
     - `keycloak_enabled: True`  (auth)
     - `ldap_enabled: True` (auth)
@@ -202,7 +198,7 @@ Once the containers come up a new port (49) should be exposed and the tacacs+ se
 ```
 tacacs_container_version: latest <- Container version
 ```
-You will need to make a few changes to `container-startup.yml` to enable tacacs+.If you are running a Docker instance you will need to  change the `container_reference:` to either your workstation IP address or `host.docker.internal`. This will vary if you are not using Docker. 
+You will need to make a few changes to `container-startup.yml` to enable tacacs+.If you are running a Docker instance you will need to  change the `container_reference:` to either your workstation IP address or `host.docker.internal`. This will vary if you are not using Docker.
 
 To enable the sidecar, you will also need to uncomment `tacacs_enabled: True`. Once the containers come up you will have access to the following user:
 1. iosadmin: cisco
@@ -314,3 +310,7 @@ Features can be descoped if needed before release and their code will not be int
 *Feature Flexibility*: Features can be easily descoped if they're not ready for release
 
 This strategy addresses the previous challenges by providing clear separation between feature development and maintenance work, while enabling flexible release management and easier backporting processes.
+
+# ansible.platform Collection
+
+This repo used to hose the ansible.platform collection. However, this has been moved out to its own [repository](https://github.com/ansible/ansible.platform).

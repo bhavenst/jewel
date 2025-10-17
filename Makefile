@@ -192,7 +192,10 @@ collection:
 		cd ..; \
 	else \
 		echo "Installing collection from github"; \
-		ansible-galaxy collection install git@github.com:ansible/ansible.platform.git; \
+		if ! ansible-galaxy collection install git+https://github.com/ansible/ansible.platform.git; then \
+			echo "HTTPS clone failed, falling back to SSH..."; \
+			ansible-galaxy collection install git@github.com:ansible/ansible.platform.git; \
+		fi; \
 	fi;
 
 ## Build the docker containers

@@ -251,8 +251,9 @@ jobs:
         env:
           DAYS: ${{ matrix.days }}
         run: |
-          END_DATE=$(date -u +%Y-%m-%d)
-          START_DATE=$(date -u -d "$END_DATE - $DAYS days" +%Y-%m-%d)
+          # Action expects d/MM/yyyy format (e.g., 5/11/2024)
+          END_DATE=$(date -u +%d/%m/%Y)
+          START_DATE=$(date -u -d "$(date -u +%Y-%m-%d) - $DAYS days" +%d/%m/%Y)
           echo "start_date=$START_DATE" >> $GITHUB_OUTPUT
           echo "end_date=$END_DATE" >> $GITHUB_OUTPUT
           echo "Analyzing PRs from $START_DATE to $END_DATE for ${{ matrix.repo }}"

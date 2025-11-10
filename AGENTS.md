@@ -182,6 +182,150 @@ mcp_atlasian_jira_update_issue(
 
 **Tip:** Always use `mcp_atlasian_jira_search_fields` to discover custom field IDs when needed.
 
+### Known MCP JIRA Tool Limitations
+
+**Issue Type Selection:**
+- When creating issues, `issue_type="Bug"` may fail in some cases
+- If bug creation fails, try `issue_type="Story"` instead
+- The story can be manually changed to bug type in the JIRA UI after creation
+
+**Fields That Work via API (with correct formats):**
+- ✅ **Components**: Use `{"components": [{"name": "aap-gateway"}]}`
+- ✅ **Story Points**: Use `{"customfield_12310243": 0}` (number, not string)
+- ✅ **Workstream**: Use `{"customfield_12319275": [{"value": "Platform Services"}]}`
+- ✅ **Assignee**: Use simple string format: `{"assignee": "jowestco@redhat.com"}` (email works best)
+- ✅ **Priority**: Use `{"priority": {"name": "Major"}}` (or "Critical", "High", "Normal", "Low")
+- ✅ **Acceptance Criteria**: Use `{"customfield_12315940": "text content"}` (plain text or newline-separated list)
+- ✅ **Sprint**: Use `{"customfield_12310940": 77833}` (plain number, NOT array, NOT string)
+- ✅ **Status Transitions**: Use `transition_issue` with valid transition ID (ensure all required fields are set first)
+
+**Recommended Workflow:**
+1. Create the issue with minimal required fields (project, summary, type, description)
+2. Note the created issue key (e.g., AAP-58187)
+3. Update fields one at a time using the working formats above
+4. Set Sprint (required for status transitions like "In Progress")
+5. Transition the issue to desired status (e.g., "In Progress")
+6. All fields can now be set programmatically!
+
+**Example: Complete Ticket Creation Workflow:**
+```python
+# Step 1: Create the issue (minimal fields)
+issue = mcp_atlasian_jira_create_issue(
+    project_key="AAP",
+    summary="Your issue summary",
+    issue_type="Story",
+    description="Your detailed description"
+)
+issue_key = issue["issue"]["key"]  # e.g., "AAP-58187"
+
+# Step 2: Update components
+mcp_atlasian_jira_update_issue(
+    issue_key=issue_key,
+    fields={"components": [{"name": "aap-gateway"}]}
+)
+
+# Step 3: Update workstream (custom field)
+mcp_atlasian_jira_update_issue(
+    issue_key=issue_key,
+    fields={},
+    additional_fields={"customfield_12319275": [{"value": "Platform Services"}]}
+)
+
+# Step 4: Update story points (custom field)
+mcp_atlasian_jira_update_issue(
+    issue_key=issue_key,
+    fields={},
+    additional_fields={"customfield_12310243": 0}
+)
+
+# Step 5: Assign to user (use email)
+mcp_atlasian_jira_update_issue(
+    issue_key=issue_key,
+    fields={"assignee": "jowestco@redhat.com"}
+)
+
+# Step 6: Set priority
+mcp_atlasian_jira_update_issue(
+    issue_key=issue_key,
+    fields={"priority": {"name": "Major"}}
+)
+
+# Step 7: Add acceptance criteria
+acceptance_criteria = """- Remove @pytest.mark.django_db from teams fixture
+- Remove @pytest.mark.django_db from users fixture
+- Verify tests pass locally with single-threaded tox run
+- Verify CI tests pass without PytestRemovedIn9Warning"""
+mcp_atlasian_jira_update_issue(
+    issue_key=issue_key,
+    fields={},
+    additional_fields={"customfield_12315940": acceptance_criteria}
+)
+
+# Step 8: Set sprint (get sprint ID from board first)
+# Use mcp_atlasian_jira_get_sprints_from_board to find the active sprint ID
+sprint_id = 77833  # Example: Platform Services 2025-44
+mcp_atlasian_jira_update_issue(
+    issue_key=issue_key,
+    fields={},
+    additional_fields={"customfield_12310940": sprint_id}
+)
+
+# Step 9: Transition to In Progress (get transition ID from get_transitions)
+mcp_atlasian_jira_transition_issue(
+    issue_key=issue_key,
+    transition_id=41  # "In Progress" transition ID
+)
+
+print(f"✅ Ticket fully configured: https://issues.redhat.com/browse/{issue_key}")
+print(f"   Status: In Progress | Sprint: Set | All fields configured!")
+```
+
+**Status Transitions:**
+
+To transition issues between states, first get available transitions, then use the transition ID:
+
+```python
+# Get available transitions for an issue
+transitions = mcp_atlasian_jira_get_transitions(issue_key="AAP-58187")
+# Returns: [{"id": 11, "name": "New"}, {"id": 41, "name": "In Progress"}, ...]
+
+# Transition the issue (with optional comment)
+mcp_atlasian_jira_transition_issue(
+    issue_key="AAP-58187",
+    transition_id=141,  # "Review" transition ID
+    comment="CI checks passed. Moving to Review."
+)
+```
+
+**Common Transition IDs** (may vary by project):
+- `11` - New
+- `71` - Refinement
+- `81` - Backlog
+- `41` - In Progress
+- `141` - Review
+- `131` - Release Pending
+- `61` - Closed
+
+**Note:** Always use `get_transitions` to get valid transition IDs for a specific issue, as available transitions depend on the issue's current state and workflow configuration.
+
+**Custom Field Discovery:**
+```bash
+# Find Story Points field
+mcp_atlasian_jira_search_fields --keyword "story points" --limit 5
+
+# Find Sprint field
+mcp_atlasian_jira_search_fields --keyword "sprint" --limit 5
+
+# Find Workstream field
+mcp_atlasian_jira_search_fields --keyword "workstream" --limit 5
+```
+
+**Key Custom Field IDs:**
+- Story Points: `customfield_12310243`
+- Sprint: `customfield_12310940`
+- Workstream: `customfield_12319275`
+- Acceptance Criteria: `customfield_12315940`
+
 ## Additional Resources
 
 For user-specific preferences and instructions, check `AGENTS_USER.md` if it exists in the repository.

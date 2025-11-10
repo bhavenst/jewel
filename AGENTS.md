@@ -102,6 +102,36 @@ tox -e 311
 - GitHub Actions sanitizes environment variables before passing to shell
 - This prevents command injection vulnerabilities
 
+### Testing Fork PRs
+**CRITICAL**: Fork PRs behave differently than upstream PRs in GitHub Actions!
+
+**Secret Handling in Fork PRs:**
+- Organization secrets are **NOT available** to fork PRs (security feature)
+- When a secret is unavailable, GitHub sets it to an **empty string** (`""`), NOT `null`
+- This is a subtle but critical distinction for conditional logic
+
+**The Gotcha:**
+```yaml
+# ❌ BAD - Empty string is truthy, this fails for fork PRs!
+GH_TOKEN: ${{ secrets.AAP_PS_DAB_COLLECTION_REPO_READ || secrets.GITHUB_TOKEN }}
+
+# ✅ GOOD - Explicitly check for non-empty string
+GH_TOKEN: ${{ secrets.AAP_PS_DAB_COLLECTION_REPO_READ != '' && secrets.AAP_PS_DAB_COLLECTION_REPO_READ || secrets.GITHUB_TOKEN }}
+```
+
+**Why The Pattern:**
+- `secrets.AAP_PS_DAB_COLLECTION_REPO_READ != ''` → Check if secret has value
+- `&& secrets.AAP_PS_DAB_COLLECTION_REPO_READ` → Return the actual token (not `true`)
+- `|| secrets.GITHUB_TOKEN` → Fallback if empty
+
+**Testing Fork PR Behavior:**
+1. **DON'T** test from an upstream branch (secrets are available)
+2. **DO** create an actual fork and open a PR from it
+3. **DO** watch how workflows behave with limited secret access
+4. **DO** verify fallback logic triggers correctly
+
+**Lesson:** Testing from an upstream branch will NOT catch fork PR issues because secrets are fully available. Always test the actual fork PR scenario when dealing with secret-dependent logic!
+
 ## Architecture & Patterns
 
 ### Parallel Test Execution
@@ -129,6 +159,13 @@ tox -e 311
 - **PR titles MUST be prefixed with JIRA number**: `[AAP-1234] Description of changes`
   - If JIRA number is not known, **STOP and prompt the user** for the JIRA ticket number
   - Never create a PR without the JIRA prefix
+- **PR descriptions MUST include Claude co-author attribution** at the end:
+  ```markdown
+  ---
+  **Note:** This PR was developed with assistance from Claude AI assistant.
+  ```
+  - This provides transparency about AI assistance in PR creation
+  - Similar to commit co-author credit, but visible in the PR description
 
 ### Common Gotchas
 - Service tests failing with "Authentication credentials were not provided"

@@ -95,7 +95,7 @@ jobs:
             echo "Replacing scripts that access secrets with trusted versions from $PR_BASE:"
             git fetch origin "$PR_BASE"
             git checkout "origin/$PR_BASE" -- tools/scripts/get_pr_checkout.py
-            echo "  ✅ get_pr_checkout.py (accesses GH_TOKEN and AAP_COLLECTION_REPO_READ_TOKEN)"
+            echo "  ✅ get_pr_checkout.py (accesses GH_TOKEN and AAP_PS_DAB_COLLECTION_REPO_READ)"
             echo ""
             echo "Note: Changes to this script in this PR will NOT be tested."
             echo "If this PR modifies this script, it must be reviewed and tested manually."
@@ -107,7 +107,7 @@ jobs:
       - name: Checkout dependencies
         env:
           PR_BODY: ${{ env.PR_BODY }}
-          GH_TOKEN: ${{ secrets.AAP_COLLECTION_REPO_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.AAP_PS_DAB_COLLECTION_REPO_READ != '' && secrets.AAP_PS_DAB_COLLECTION_REPO_READ || secrets.GITHUB_TOKEN }}
         run: |
           python tools/scripts/get_pr_checkout.py \
             --always-clone-repos '[ansible-automation-platform|ansible]/django-ansible-base' \

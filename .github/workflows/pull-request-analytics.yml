@@ -2,7 +2,7 @@ name: "PR Analytics"
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # Daily at midnight UTC
+    - cron: '0 0 * * 0'  # Weekly on Sunday at midnight UTC
   workflow_dispatch:  # Allow manual trigger
     inputs:
       repo:
@@ -258,8 +258,43 @@ jobs:
           echo "end_date=$END_DATE" >> $GITHUB_OUTPUT
           echo "Analyzing PRs from $START_DATE to $END_DATE for ${{ matrix.repo }}"
 
-      - name: "Generate PR analytics report"
-        id: analytics
+      - name: "Get organization teams to exclude"
+        id: teams
+        env:
+          GH_TOKEN: ${{ secrets[format('{0}', vars.PR_ANALYSIS_SECRET_NAME)] }}
+          ORG: ${{ github.repository_owner }}
+        run: |
+          echo "Fetching teams from organization: $ORG"
+
+          # Get all team slugs from the organization
+          TEAMS=$(gh api "orgs/$ORG/teams" --paginate --jq '.[].slug' | tr '\n' ',' | sed 's/,$//')
+
+          if [ -z "$TEAMS" ]; then
+            echo "No teams found in organization"
+            echo "teams_list=" >> $GITHUB_OUTPUT
+          else
+            echo "Found teams: $TEAMS"
+            echo "teams_list=$TEAMS" >> $GITHUB_OUTPUT
+          fi
+
+      - name: "Set common analytics parameters"
+        id: common-params
+        run: |
+          # Centralized parameters for PR analytics action
+          # These are used by both the issue update and markdown generation
+          echo "show_stats_types=timeline,workload,pr-quality,code-review-engagement,response-time" >> $GITHUB_OUTPUT
+          echo "aggregate_methods=average,percentile" >> $GITHUB_OUTPUT
+          echo "allow_analytics=false" >> $GITHUB_OUTPUT
+          echo "include_users=${{ vars.PR_ANALYSIS_INCLUDE_USERS }}" >> $GITHUB_OUTPUT
+          echo "exclude_labels=wip,hold,poc" >> $GITHUB_OUTPUT
+          echo "amount=100" >> $GITHUB_OUTPUT
+          echo "percentile=75" >> $GITHUB_OUTPUT
+          echo "top_list_amount=10" >> $GITHUB_OUTPUT
+          echo "required_approvals=1" >> $GITHUB_OUTPUT
+          echo "weekends=0,6" >> $GITHUB_OUTPUT
+
+      - name: "Generate PR analytics report (Issue)"
+        id: analytics-issue
         uses: AlexSim93/pull-request-analytics-action@01d9a216d16b2eee2ce048c748f3acaac8882990  # v4.8.0
         with:
           GITHUB_TOKEN: ${{ secrets[format('{0}', vars.PR_ANALYSIS_SECRET_NAME)] }}
@@ -271,8 +306,121 @@ jobs:
           EXECUTION_OUTCOME: 'existing-issue'
           ISSUE_NUMBER: ${{ steps.issue.outputs.issue_number }}
           ISSUE_TITLE: ${{ steps.metadata.outputs.issue_title }}
-          SHOW_STATS_TYPES: 'timeline,workload,pr-quality,code-review-engagement,response-time'
-          AGGREGATE_VALUE_METHODS: 'average,percentile'
+          SHOW_STATS_TYPES: ${{ steps.common-params.outputs.show_stats_types }}
+          AGGREGATE_VALUE_METHODS: ${{ steps.common-params.outputs.aggregate_methods }}
+          HIDE_USERS: ${{ steps.teams.outputs.teams_list }}
+          ALLOW_ANALYTICS: ${{ steps.common-params.outputs.allow_analytics }}
+          INCLUDE_USERS: ${{ steps.common-params.outputs.include_users }}
+          EXCLUDE_LABELS: ${{ steps.common-params.outputs.exclude_labels }}
+          AMOUNT: ${{ steps.common-params.outputs.amount }}
+          PERCENTILE: ${{ steps.common-params.outputs.percentile }}
+          TOP_LIST_AMOUNT: ${{ steps.common-params.outputs.top_list_amount }}
+          REQUIRED_APPROVALS: ${{ steps.common-params.outputs.required_approvals }}
+          WEEKENDS: ${{ steps.common-params.outputs.weekends }}
+
+      - name: "Generate PR analytics report (Markdown)"
+        id: analytics-markdown
+        uses: AlexSim93/pull-request-analytics-action@01d9a216d16b2eee2ce048c748f3acaac8882990  # v4.8.0
+        with:
+          GITHUB_TOKEN: ${{ secrets[format('{0}', vars.PR_ANALYSIS_SECRET_NAME)] }}
+          GITHUB_OWNERS_REPOS: ${{ matrix.repo }}
+          REPORT_DATE_START: ${{ steps.dates.outputs.start_date }}
+          REPORT_DATE_END: ${{ steps.dates.outputs.end_date }}
+          EXECUTION_OUTCOME: 'markdown'
+          SHOW_STATS_TYPES: ${{ steps.common-params.outputs.show_stats_types }}
+          AGGREGATE_VALUE_METHODS: ${{ steps.common-params.outputs.aggregate_methods }}
+          HIDE_USERS: ${{ steps.teams.outputs.teams_list }}
+          ALLOW_ANALYTICS: ${{ steps.common-params.outputs.allow_analytics }}
+          INCLUDE_USERS: ${{ steps.common-params.outputs.include_users }}
+          EXCLUDE_LABELS: ${{ steps.common-params.outputs.exclude_labels }}
+          AMOUNT: ${{ steps.common-params.outputs.amount }}
+          PERCENTILE: ${{ steps.common-params.outputs.percentile }}
+          TOP_LIST_AMOUNT: ${{ steps.common-params.outputs.top_list_amount }}
+          REQUIRED_APPROVALS: ${{ steps.common-params.outputs.required_approvals }}
+          WEEKENDS: ${{ steps.common-params.outputs.weekends }}
+
+      - name: "Save markdown report as artifact"
+        id: save-markdown
+        run: |
+          # Create artifacts directory
+          mkdir -p artifacts
+
+          # Generate filename with metadata
+          FILENAME="pr-analytics-${{ steps.metadata.outputs.repo_name }}-${{ matrix.days }}days-$(date -u +%Y%m%d-%H%M%S).md"
+          echo "filename=$FILENAME" >> $GITHUB_OUTPUT
+
+          # Save markdown output to file
+          cat > "artifacts/$FILENAME" << 'EOF'
+          ${{ steps.analytics-markdown.outputs.MARKDOWN }}
+          EOF
+
+          echo "Saved markdown report to artifacts/$FILENAME"
+          ls -lh artifacts/
+
+      - name: "Upload markdown artifact"
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-analytics-${{ steps.metadata.outputs.repo_name }}-${{ matrix.days }}d
+          path: artifacts/*.md
+          retention-days: 90
+
+      - name: "Add artifact link comment to issue"
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.issue.outputs.issue_number }}
+          ISSUE_REPO: ${{ github.repository }}
+          REPO_NAME: ${{ steps.metadata.outputs.repo_name }}
+          PERIOD_LABEL: ${{ steps.metadata.outputs.period_label }}
+          RUN_ID: ${{ github.run_id }}
+          DAYS: ${{ matrix.days }}
+        run: |
+          ARTIFACT_URL="https://github.com/$ISSUE_REPO/actions/runs/$RUN_ID"
+
+          COMMENT_BODY="📊 **PR Analytics Report Available**
+
+          A downloadable markdown version of this report is available as an artifact:
+          - **Repository:** \`$REPO_NAME\`
+          - **Period:** $PERIOD_LABEL ($DAYS days)
+          - **Download:** [View artifacts]($ARTIFACT_URL)
+
+          The artifact will be available for 90 days."
+
+          gh issue comment "$ISSUE_NUMBER" \
+            --repo "$ISSUE_REPO" \
+            --body "$COMMENT_BODY"
+
+          echo "Added artifact link comment to issue #$ISSUE_NUMBER"
+
+      - name: "Clean up old comments"
+        if: success() && vars.PR_ANALYSIS_BOT_USER != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.issue.outputs.issue_number }}
+          ISSUE_REPO: ${{ github.repository }}
+          BOT_USER: ${{ vars.PR_ANALYSIS_BOT_USER }}
+        run: |
+          echo "Cleaning up old analytics comments from issue #$ISSUE_NUMBER"
+          echo "Bot user: $BOT_USER"
+
+          # Get the timestamp from 5 minutes ago (comments from this run should be newer)
+          CUTOFF_TIME=$(date -u -d '5 minutes ago' --iso-8601=seconds)
+          echo "Removing bot comments older than: $CUTOFF_TIME"
+
+          # Get comments from bot user that are older than cutoff time
+          COMMENTS=$(gh api "repos/$ISSUE_REPO/issues/$ISSUE_NUMBER/comments" \
+            --jq ".[] | select(.user.login == \"$BOT_USER\" and .created_at < \"$CUTOFF_TIME\") | .id")
+
+          if [ -z "$COMMENTS" ]; then
+            echo "No old bot comments to remove"
+          else
+            echo "Found bot comments to remove:"
+            for COMMENT_ID in $COMMENTS; do
+              echo "  Deleting comment ID: $COMMENT_ID"
+              gh api -X DELETE "repos/$ISSUE_REPO/issues/comments/$COMMENT_ID" || true
+            done
+            echo "Cleanup complete"
+          fi
 
       - name: "Update issue title with status"
         if: always()

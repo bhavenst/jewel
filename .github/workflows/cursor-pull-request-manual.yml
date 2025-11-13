@@ -1,0 +1,50 @@
+name: Cursor PR Review (Manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: string
+
+jobs:
+  fetch-pr-metadata:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      pr_number: ${{ steps.pr-data.outputs.pr_number }}
+      repository: ${{ steps.pr-data.outputs.repository }}
+      head_sha: ${{ steps.pr-data.outputs.head_sha }}
+    steps:
+      - name: Fetch PR metadata
+        id: pr-data
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          echo "Fetching PR metadata for PR #$PR_NUMBER"
+
+          # Fetch PR details using gh CLI
+          PR_DATA=$(gh pr view "$PR_NUMBER" --repo ${{ github.repository }} --json number,headRefOid --jq '.')
+
+          echo "pr_number=$(echo "$PR_DATA" | jq -r '.number')" >> $GITHUB_OUTPUT
+          echo "head_sha=$(echo "$PR_DATA" | jq -r '.headRefOid')" >> $GITHUB_OUTPUT
+          echo "repository=${{ github.repository }}" >> $GITHUB_OUTPUT
+
+  call-cursor-review:
+    needs: fetch-pr-metadata
+    permissions:
+      contents: read
+      pull-requests: write
+      actions: read
+      checks: read
+    uses: ./.github/workflows/cursor-pull-request.yml
+    with:
+      pr_number: ${{ needs.fetch-pr-metadata.outputs.pr_number }}
+      repository: ${{ needs.fetch-pr-metadata.outputs.repository }}
+      head_sha: ${{ needs.fetch-pr-metadata.outputs.head_sha }}
+    secrets:
+      CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+      AAP_PS_DAB_COLLECTION_REPO_READ: ${{ secrets.AAP_PS_DAB_COLLECTION_REPO_READ }}

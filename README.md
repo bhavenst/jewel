@@ -82,6 +82,17 @@ This will:
 
 See [development doc](docs/development.md)
 
+## Cursor CLI Configuration
+
+This repository includes automated code review tooling using Cursor CLI with GitHub MCP integration.
+
+For information on:
+- Running automated PR reviews locally
+- Configuring Cursor CLI with GitHub MCP
+- Using custom slash commands
+
+See [`.cursor/README.md`](.cursor/README.md)
+
 ## Side cars
 
 There are additional services available to be started alongside gateway to enable development. We call these side car containers. When you run an initial `make docker-compose` a file called `container-startup.yml` will be created at the root of your project. If you haven't run `make docker-compose` yet and want to generate the file you can run `make container-startup.yml".

@@ -1,0 +1,71 @@
+name: Cursor Code Review (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: string
+      repository:
+        description: 'Repository name'
+        required: true
+        type: string
+      head_sha:
+        description: 'PR head SHA'
+        required: true
+        type: string
+    secrets:
+      CURSOR_API_KEY:
+        required: true
+      AAP_PS_DAB_COLLECTION_REPO_READ:
+        required: true
+
+jobs:
+  cursor-code-review:
+    if: vars.CURSOR_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: read
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.head_sha }}
+          fetch-depth: 0
+
+      - name: Checkout dependencies
+        env:
+          PR_BODY: ${{ env.PR_BODY }}
+          GH_TOKEN: ${{ secrets.AAP_PS_DAB_COLLECTION_REPO_READ != '' && secrets.AAP_PS_DAB_COLLECTION_REPO_READ || secrets.GITHUB_TOKEN }}
+        run: |
+          python tools/scripts/get_pr_checkout.py \
+            --always-clone-repos '[ansible-automation-platform|ansible]/django-ansible-base' \
+            --always-clone-repos ansible/ansible.platform
+
+      - name: Install Cursor CLI
+        run: |
+          # Options applied to curl:
+          #   -f: Fail if HTTP response code of 400 or higher received
+          #   -s: Run in silent mode, except for the output of the request
+          #   -S: Print errors on failure when running curl in silent mode
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.cursor/bin" >> $GITHUB_PATH
+
+      - name: Perform code review
+        env:
+          # Sets global config directory, allowing us to set permissions
+          CURSOR_CONFIG_DIR: tools/configs/cursor/pr-review/
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+          CURSOR_MODEL: ${{ vars.CURSOR_MODEL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OUTPUT_FORMAT: text
+          PR_NUMBER: ${{ inputs.pr_number }}
+          PR_REPOSITORY: ${{ inputs.repository }}
+        run: |
+          ln -s "../${CURSOR_CONFIG_DIR}/mcp.json" .cursor/mcp.json
+          cursor-agent --approve-mcps --model "${CURSOR_MODEL}" --output-format="${OUTPUT_FORMAT}" --print "/pr-review ${PR_REPOSITORY} ${PR_NUMBER}"
+          echo "Review complete. All comments posted directly to PR via GitHub MCP."

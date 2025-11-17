@@ -35,14 +35,22 @@ You can run the automated PR review command locally on your development machine 
    ln -s "$(pwd)/tools/configs/cursor/pr-review/mcp.json" ~/.cursor/mcp.json
    ```
 
-2. **Set Environment Variables**:
+2. **Create GitHub MCP Environment File**:
+
+   Create a `.github_mcp_env` file in the repository root with your GitHub Personal Access Token:
    ```bash
-   export GITHUB_TOKEN="your_github_personal_access_token"
+   echo "GITHUB_PERSONAL_ACCESS_TOKEN=your_github_personal_access_token" > .github_mcp_env
+   ```
+
+   This file is used by the GitHub MCP server for authentication. Make sure it's in `.gitignore` to avoid committing credentials.
+
+3. **Set Environment Variables**:
+   ```bash
    export CURSOR_API_KEY="your_cursor_api_key"
    export CURSOR_MODEL="claude-sonnet-4-5@20250929"  # or your preferred model
    ```
 
-3. **Set Cursor Config Directory**:
+4. **Set Cursor Config Directory**:
    ```bash
    export CURSOR_CONFIG_DIR="tools/configs/cursor/pr-review/"
    ```
@@ -69,7 +77,7 @@ cursor-agent --approve-mcps \
 ### How It Works
 
 1. **GitHub MCP Server**: Runs in a Docker container (pulled automatically on first run)
-2. **Authentication**: Uses your `GITHUB_TOKEN` environment variable for GitHub API access
+2. **Authentication**: Uses the `GITHUB_PERSONAL_ACCESS_TOKEN` from `.github_mcp_env` file for GitHub API access
 3. **Review Process**:
    - Creates a pending review on the PR
    - Adds review comments with code suggestions to the pending review
@@ -85,9 +93,8 @@ cursor-agent --approve-mcps \
 
 ## Configuration Files
 
-The PR review command uses configuration files from `tools/configs/cursor/pr-review/`:
+The PR review command uses configuration from `tools/configs/cursor/pr-review/`:
 
-- **`cli-config.json`**: Cursor CLI permissions (allows Shell(gh), Read, mcp__github__*)
 - **`mcp.json`**: GitHub MCP server configuration (Docker container setup)
 
 ## CI/CD Usage

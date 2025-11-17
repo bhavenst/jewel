@@ -33,9 +33,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.head_sha }}
-          fetch-depth: 0
 
       - name: Checkout dependencies
         env:
@@ -57,8 +54,6 @@ jobs:
 
       - name: Perform code review
         env:
-          # Sets global config directory, allowing us to set permissions
-          CURSOR_CONFIG_DIR: tools/configs/cursor/pr-review/
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
           CURSOR_MODEL: ${{ vars.CURSOR_MODEL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -66,6 +61,9 @@ jobs:
           PR_NUMBER: ${{ inputs.pr_number }}
           PR_REPOSITORY: ${{ inputs.repository }}
         run: |
-          ln -s "../${CURSOR_CONFIG_DIR}/mcp.json" .cursor/mcp.json
-          cursor-agent --approve-mcps --model "${CURSOR_MODEL}" --output-format="${OUTPUT_FORMAT}" --print "/pr-review ${PR_REPOSITORY} ${PR_NUMBER}"
-          echo "Review complete. All comments posted directly to PR via GitHub MCP."
+          # Create env file that can read github token, since cursor config specification lies about its functionality
+          echo "GITHUB_PERSONAL_ACCESS_TOKEN=${GH_TOKEN}" > .github_mcp_env
+          # CURSOR_CONFIG_DIR does not apply mcp settings when setting the cursor config directory, so we need to symlink it to the project
+          ln -s "../tools/configs/cursor/pr-review/mcp.json" .cursor/mcp.json
+          # Run the actual prompt. I'm not convinced that it can recognize commands from the CLI, so we're using @file syntax instead.
+          cursor-agent -f --approve-mcps --model "${CURSOR_MODEL}" --output-format="${OUTPUT_FORMAT}" --print "@.cursor/commands/pr-review.md : Repository: ${PR_REPOSITORY}. PR ${PR_NUMBER}"

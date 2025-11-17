@@ -10,12 +10,12 @@ If you find it's not authenticated, follow the Error Handling section to documen
 
 **Submit a complete review to GitHub** using the GitHub MCP pending review workflow:
 
-1. Create a pending review: `mcp__github__create_pending_pull_request_review`
-2. Add comments to pending review: `mcp__github__add_comment_to_pending_review`
+1. Create a pending review: `github-create_pending_pull_request_review`
+2. Add comments to pending review: `github-add_comment_to_pending_review`
    - Only comment on changed lines (+ or - in diff)
    - Include code suggestions using GitHub's suggestion syntax
    - Ensure perfect line number and indentation alignment
-3. Submit the pending review: `mcp__github__submit_pending_pull_request_review`
+3. Submit the pending review: `github-submit_pending_pull_request_review`
    - Include summary with comment count and overall assessment
    - Use event type "COMMENT" only
 
@@ -52,6 +52,17 @@ You will be given the following inputs:
 
 Both the PR number and the repository are *required*, *do not proceed without either*.
 
+## PR Review Requirements
+
+When asked to review a PR, you MUST:
+
+1. **Fetch PR data** using `github-pull_request_read` (get, get_diff, get_files)
+2. **Create a pending review** using `github-create_pending_pull_request_review`
+3. **Add inline comments** using `github-add_comment_to_pending_review` for each issue found
+4. **Submit the review** using `github-submit_pending_pull_request_review` with the `COMMENT` event type.
+5. **Never just provide a summary** - always submit via GitHub API
+6. **Provide the PR URL** after submitting so user can view the review
+
 ## Review Process:
 
 **Available Permissions**: The workflow has `contents: read`, `pull-requests: write`, `checks: read`, `actions: read`.
@@ -60,32 +71,20 @@ Both the PR number and the repository are *required*, *do not proceed without ei
 
 Use the following GitHub MCP tools to get PR details:
 
-1. **Get PR metadata**: `mcp__github__pull_request_read.get`
+1. **Get PR metadata**: `github-pull_request_read.get`
    - Retrieves PR title, body, and metadata
 
-2. **Get changed files**: `mcp__github__pull_request_read.get_files`
+2. **Get changed files**: `github-pull_request_read.get_files`
    - Returns list of files added, removed, and changed in the PR
 
-3. **Get the diff**: `mcp__github__pull_request_read.get_diff`
+3. **Get the diff**: `github-pull_request_read.get_diff`
    - Returns the diff with line numbers for both LEFT (before) and RIGHT (after) code
-
-**If GitHub MCP is not available or fails**, fall back to gh CLI:
-
-```bash
-# Approach 1: Basic gh pr view
-gh pr view <PR_NUMBER> --repo <REPOSITORY> --json title,body,files
-gh pr diff <PR_NUMBER> --repo <REPOSITORY>
-
-# Approach 2: Use GitHub API directly
-gh api repos/<REPOSITORY>/pulls/<PR_NUMBER>
-gh api repos/<REPOSITORY>/pulls/<PR_NUMBER>/files
-```
 
 ### Step 2: Create Pending Review
 
 Before adding any comments, create a pending review:
 
-**Use**: `mcp__github__create_pending_pull_request_review`
+**Use**: `github-create_pending_pull_request_review`
 
 Note: If you get an error like "can only have one pending review per pull request", ignore it and proceed to Step 3.
 
@@ -95,7 +94,7 @@ Note: If you get an error like "can only have one pending review per pull reques
 
 1. **Read the file** using the Read tool to understand full context
 2. **Identify the specific issue** (security, correctness, quality, etc.)
-3. **Add a comment to the pending review** using `mcp__github__add_comment_to_pending_review`:
+3. **Add a comment to the pending review** using `github-add_comment_to_pending_review`:
 
    **CRITICAL LINE NUMBER RULES**:
    - **Only comment on changed lines** (lines with `+` or `-` in the diff)
@@ -158,7 +157,7 @@ Note: If you get an error like "can only have one pending review per pull reques
 
 After adding all comments to the pending review, submit it:
 
-**Use**: `mcp__github__submit_pending_pull_request_review`
+**Use**: `github-submit_pending_pull_request_review`
 
 **Parameters**:
 - **event**: Must be `"COMMENT"` (DO NOT use "APPROVE" or "REQUEST_CHANGES")
@@ -213,9 +212,9 @@ After adding all comments to the pending review, submit it:
 
 Before completing, verify all steps from the Review Process are done:
 
-- [ ] **Step 2**: Pending review created via `mcp__github__create_pending_pull_request_review`
-- [ ] **Step 3**: Comments added with correct line numbers via `mcp__github__add_comment_to_pending_review`
-- [ ] **Step 5**: Review submitted with summary via `mcp__github__submit_pending_pull_request_review`
+- [ ] **Step 2**: Pending review created via `github-create_pending_pull_request_review`
+- [ ] **Step 3**: Comments added with correct line numbers via `github-add_comment_to_pending_review`
+- [ ] **Step 5**: Review submitted with summary via `github-submit_pending_pull_request_review`
 
 Then inform the user: "Review complete. Submitted review with [N] comments to PR #[NUMBER]"
 

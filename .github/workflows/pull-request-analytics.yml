@@ -286,7 +286,7 @@ jobs:
           echo "aggregate_methods=average,percentile" >> $GITHUB_OUTPUT
           echo "allow_analytics=false" >> $GITHUB_OUTPUT
           echo "include_users=${{ vars.PR_ANALYSIS_INCLUDE_USERS }}" >> $GITHUB_OUTPUT
-          echo "exclude_labels=wip,hold,poc" >> $GITHUB_OUTPUT
+          echo "exclude_labels=wip,hold,poc,blocked,do-not-merge" >> $GITHUB_OUTPUT
           echo "amount=100" >> $GITHUB_OUTPUT
           echo "percentile=75" >> $GITHUB_OUTPUT
           echo "top_list_amount=10" >> $GITHUB_OUTPUT

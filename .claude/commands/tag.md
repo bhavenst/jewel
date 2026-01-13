@@ -21,7 +21,7 @@ Lets refer to this as {commit}
 **MANDATORY FIRST STEP:** Before proceeding with any other steps, you MUST:
 
 1. Read `AGENTS_USER.md` in the workspace root
-2. Read `CLAUDE.md` in the workspace root
+2. Read `AGENTS.md` in the workspace root
 3. Verify you understand:
    - JIRA credentials and comment formatting requirements
    - Git workflow with forked repositories

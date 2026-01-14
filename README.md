@@ -325,4 +325,4 @@ This strategy addresses the previous challenges by providing clear separation be
 
 # ansible.platform Collection
 
-This repo used to hose the ansible.platform collection. However, this has been moved out to its own [repository](https://github.com/ansible/ansible.platform).
+This repo used to house the ansible.platform collection. However, this has been moved out to its own [repository](https://github.com/ansible/ansible.platform).

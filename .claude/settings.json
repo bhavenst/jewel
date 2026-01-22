@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(mkdir:* && echo:*)",
+      "Bash(echo:*)",
+      "Bash(chmod:*)",
+      "Bash(tee:*)",
+      "Bash(git remote:*)",
+      "Bash(git fetch:*)",
+      "Bash(git log:*)",
+      "Bash(git tag:*)",
+      "Bash(git cat-file:*)",
+      "Bash(git merge-base:*)",
+      "Bash(git ls-remote:*)",
+      "Bash(gh:*)",
+      "Create",
+      "Edit",
+      "Skill(tag:*)"
+    ]
+  }
+}

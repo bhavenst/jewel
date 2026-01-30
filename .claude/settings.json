@@ -15,8 +15,7 @@
       "Bash(git ls-remote:*)",
       "Bash(gh:*)",
       "Create",
-      "Edit",
-      "Skill(tag:*)"
+      "Edit"
     ]
   }
 }

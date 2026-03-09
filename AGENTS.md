@@ -49,6 +49,8 @@ make docker-compose
 ### Running Tests
 **CRITICAL:** Always use `tox` instead of `pytest` directly. Direct pytest will fail with Django configuration errors.
 
+**IMPORTANT:** When running specific tests, always set `GATEWAY_TEST_DIRS=""` to prevent tox from also collecting the entire default test directory. Without this, pytest receives both your specific test path AND the default `aap_gateway_api/tests` directory, causing it to collect and run far more tests than intended.
+
 ```bash
 # Run all tests (parallel by default)
 tox -e py312
@@ -56,9 +58,9 @@ tox -e py312
 # Run single-threaded (for debugging)
 PYTEST_NUM_PROCESSES=1 tox -e py312
 
-# Run specific tests
-tox -e py312 -- -k "test_pattern_name" -v
-tox -e py312 -- aap_gateway_api/tests/path/to/test_file.py -v
+# Run specific tests (GATEWAY_TEST_DIRS="" prevents double collection)
+GATEWAY_TEST_DIRS="" tox -e py312 -- -k "test_pattern_name" -v
+GATEWAY_TEST_DIRS="" tox -e py312 -- aap_gateway_api/tests/path/to/test_file.py -v
 
 # Stress test for threading issues
 ./run_tox_batch.sh
@@ -146,7 +148,8 @@ GH_TOKEN: ${{ secrets.AAP_PS_DAB_COLLECTION_REPO_READ != '' && secrets.AAP_PS_DA
 ### Key Components
 - **WorkerIsolatedRedisCache**: Custom cache backend for parallel test safety
 - **preference_manager fixture**: Context manager for preference isolation
-- **ensure_jwt_keys fixture**: JWT authentication for service tests
+- **run_tests.sh**: Wrapper script that generates a per-tox-run JWT keypair, passes it to pytest via `--jwt-keypair-file`, and cleans up on exit
+- **_patch_jwt_keygen**: Session-scoped autouse fixture that patches `post_migrate` to always use the tox-provided keypair
 - **Service fixtures**: Auto-depend on JWT keys for authentication
 
 ### Git Workflow Patterns

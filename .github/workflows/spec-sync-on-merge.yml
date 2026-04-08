@@ -96,7 +96,7 @@ jobs:
       - name: Checkout spec repo
         uses: actions/checkout@v4
         with:
-          repository: ansible-automation-platform/aap-openapi-specs
+          repository: ${{ secrets.OPENAPI_SPEC_REPO }}
           ref: ${{ github.ref_name }}
           path: spec-repo
           token: ${{ secrets.OPENAPI_SPEC_SYNC_TOKEN }}
@@ -132,6 +132,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.OPENAPI_SPEC_SYNC_TOKEN }}
           GPG_PRIVATE_KEY: ${{ secrets.OPENAPI_SPEC_SYNC_GPG_PRIVATE_KEY }}
+          SPEC_REPO: ${{ secrets.OPENAPI_SPEC_REPO }}
           SOURCE_SHA: ${{ github.sha }}
           SOURCE_BRANCH: ${{ github.ref_name }}
           SOURCE_REPO: ${{ github.repository }}
@@ -150,14 +151,14 @@ jobs:
           git config user.signingkey "$GPG_KEY_ID"
 
           # Configure git to use the token for push
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/ansible-automation-platform/aap-openapi-specs.git"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${SPEC_REPO}.git"
 
           # Use a stable branch name so we can reuse it across runs
           BRANCH_NAME="auto/update-gateway-${SOURCE_BRANCH}"
 
           # Check if there's already an open PR from this branch
           EXISTING_PR=$(gh pr list \
-            --repo ansible-automation-platform/aap-openapi-specs \
+            --repo "$SPEC_REPO" \
             --head "$BRANCH_NAME" \
             --base "$SOURCE_BRANCH" \
             --state open \
@@ -204,11 +205,12 @@ jobs:
 
           if [ -n "$EXISTING_PR" ]; then
             gh pr edit "$EXISTING_PR" \
-              --repo ansible-automation-platform/aap-openapi-specs \
+              --repo "$SPEC_REPO" \
               --body "$PR_BODY"
             echo "✅ Updated existing PR #${EXISTING_PR}"
           else
             gh pr create \
+              --repo "$SPEC_REPO" \
               --title "[${SOURCE_BRANCH}] Update gateway spec from merged commit" \
               --body "$PR_BODY" \
               --base "$SOURCE_BRANCH" \

@@ -126,6 +126,7 @@ just add them for every version you want to backport to. Note the `-` in the lab
 these must exactly match for Patchback to function.
   - `backport-2.5` for stable-2.5 backports
   - `backport-2.6` for stable-2.6 backports
+  - `backport-2.7` for stable-2.7 backports
 - Once the PR is merged, Patchback will create a PR. This will work even if the PR is already merged.
 - After the backport PR is automatically created, modify the PR title to include the Jira issue number of the backport. In the
 following string, only `[AAP-23456]` was manually added:

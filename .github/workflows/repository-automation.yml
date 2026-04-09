@@ -49,6 +49,6 @@ jobs:
 
           # Enable all features for comprehensive testing
           accepted-releases: '["2.5", "2.6", "2.7", "devel"]'
-          accepted-backports: '["2.5", "2.6", "devel"]'
+          accepted-backports: '["2.5", "2.6", "2.7", "devel"]'
           enable-feature-branch: true
           stale-days: 5

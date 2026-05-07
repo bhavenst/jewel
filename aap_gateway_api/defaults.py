@@ -384,7 +384,7 @@ MAX_ACTIVE_KEYS_PER_SERVICE = 2
 RESOURCE_SERVER_SYNC_ENABLED = False
 
 # Runtime feature flag settings
-RUNTIME_FEATURE_FLAGS = False
+RUNTIME_FEATURE_FLAGS = True
 RUNTIME_FEATURE_FLAGS_UI = False
 
 SDS_CLUSTER_NAMES = ["gateway-control-plane-rest"]

@@ -6,7 +6,7 @@ django-crum
 django-dynamic-preferences
 django-extensions>=4.0 # python 3.12 support added in version 4: https://github.com/django-extensions/django-extensions/releases/tag/4.0
 django-flags
-drf-spectacular==0.26.5  # Pinning this since later versions break ATF client generation
+drf-spectacular==0.29.0  # Pinning to align with DAB
 grpcio
 grpcio-tools
 protobuf>=5.29.5  # CVE-2025-4565
@@ -20,4 +20,7 @@ PyYAML
 # Not directly imported but pinned per dependabot alerts
 urllib3>=2.7.0   # CVE-2026-44431 / CVE-2026-44432
 argon2-cffi
-dynaconf>=3.2.10,<4.0.0
+dynaconf>=3.2.13,<4.0.0  # CVE-2026-33154
+referencing<0.37.0  # consistent with DAB pin from jsonschema-path
+jsonschema<4.26  # 4.26+ requires rpds-py>=0.25, incompatible with hermeto
+rpds-py<0.25  # Konflux container builds use hermeto, which does not support rpds-py>=0.25

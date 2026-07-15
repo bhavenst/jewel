@@ -26,10 +26,7 @@ from rest_framework.settings import api_settings
 
 from aap_gateway_api.common.authentication import SERVICE_TOKEN_AUTH_STRING
 from aap_gateway_api.common.envoy import AUTH_TYPE_NONE
-from aap_gateway_api.models import ServiceCluster
 from aap_gateway_api.utils import JWTSessionCache, create_signed_jwt, get_jwt_rsa_key, get_preference_value
-
-from .service_auth import ServiceAuthHelper
 
 MIDDLEWARE = [SessionMiddleware, AuthenticatorBackendMiddleware, AuthenticationMiddleware, LogRequestMiddleware]
 
@@ -251,17 +248,8 @@ class _ExternalAuth:
         if scope_denied_response := self._check_oauth2_scope_permission(user):
             return scope_denied_response
 
-        match self.auth_type:
-            case ServiceCluster.ServiceAuthType.JWT_AUTH:
-                header_name = get_preference_value('proxy', 'gateway_token_name')
-                header_val = self.get_jwt_for_user(user)
-            case _:
-                # Not JWT
-                try:
-                    (header_name, header_val) = ServiceAuthHelper.get_auth_header(self.service_type, self.auth_type)
-                except (NameError, RuntimeError) as e:
-                    logger.exception(e)
-                    raise
+        header_name = get_preference_value('proxy', 'gateway_token_name')
+        header_val = self.get_jwt_for_user(user)
 
         self.headers.append(HeaderValueOption(header=HeaderValue(key=header_name, value=header_val)))
         return self._return_authenticated(user.username)

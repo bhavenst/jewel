@@ -640,7 +640,6 @@ def test_migration_skips_when_already_synced(admin_user, capsys, service_api_rou
         captured = capsys.readouterr()
         assert "already synchronized" in captured.out
         assert "skipping resource migration" in captured.out
-        # Resource migration is skipped but role assignments still run
         assert "Migrating data for" not in captured.out
         assert "role assignments" in captured.out
 
@@ -674,6 +673,59 @@ def test_migration_proceeds_when_not_synced(admin_user, capsys, service_api_rout
         captured = capsys.readouterr()
         assert "already synchronized" not in captured.out
         assert "Migrating data for" in captured.out
+
+
+@pytest.mark.django_db(transaction=True)
+def test_migration_uses_bulk_fetch(admin_user, capsys, service_api_route_controller, patched_resource_client, system_user):
+    """Test that migration uses list_resources with extra_fields instead of individual get_resource calls."""
+
+    with (
+        patch('aap_gateway_api.utils.resources_client.GWResourceAPIClient') as mock_client_class,
+        patch('aap_gateway_api.management.commands.migrate_service_data.Command.load_types_and_permissions'),
+    ):
+        created_clients = []
+
+        def mock_client_factory(service_api, *args, **kwargs):
+            mock_client = Mock()
+            mock_client.service = service_api
+            mock_client.user = admin_user
+            mock_client.get_service_metadata.return_value.json.return_value = {
+                "service_id": str(uuid.uuid4()),
+                "service_type": "controller",
+            }
+
+            def list_resources_handler(filters=None):
+                if filters and "extra_fields" in filters:
+                    return Mock(json=Mock(return_value={"count": 0, "results": [], "next": None}))
+                return Mock(json=Mock(return_value={"count": 1, "results": []}))
+
+            mock_client.list_resources.side_effect = list_resources_handler
+            mock_client.list_user_assignments.return_value.json.return_value = {"count": 0, "results": [], "next": None}
+            mock_client.list_team_assignments.return_value.json.return_value = {"count": 0, "results": [], "next": None}
+            created_clients.append(mock_client)
+            return mock_client
+
+        mock_client_class.side_effect = mock_client_factory
+
+        call_command("migrate_service_data", username=admin_user.username)
+
+        assert created_clients, "Expected GWResourceAPIClient to be instantiated"
+        for mock_instance in created_clients:
+            mock_instance.get_resource.assert_not_called()
+            assert any(call.kwargs.get("filters", {}).get("extra_fields") == "resource_data" for call in mock_instance.list_resources.call_args_list), (
+                "Expected list_resources to be called with extra_fields=resource_data"
+            )
+
+
+@pytest.mark.django_db
+def test_process_migrate_resource_item_raises_on_missing_resource_data():
+    """Test that _process_and_migrate_resource_item raises when resource_data is missing."""
+    cmd = MigrateCommand()
+    resource_item = {"ansible_id": "test-id-123", "name": "test"}
+    resource_context = {"type": Mock()}
+
+    with pytest.raises(RuntimeError, match="missing 'resource_data'"):
+        cmd._process_and_migrate_resource_item(resource_item, resource_context)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -1698,25 +1750,14 @@ def test_ensure_controller_gateway_superusers_scenarios(
     # Mock client with Controller superusers
     mock_client = Mock()
 
-    # Mock list_resources response (returns items with ansible_id)
+    # Mock list_resources response with resource_data included (bulk fetch)
     list_results = []
-    get_resource_responses = {}
 
     for i, (username, is_superuser) in enumerate(controller_users):
         ansible_id = f"ansible-id-{i}"
-        list_results.append({"ansible_id": ansible_id})
-        # Mock get_resource response for each user
-        get_resource_responses[ansible_id] = {"resource_data": {"username": username, "is_superuser": is_superuser}}
+        list_results.append({"ansible_id": ansible_id, "resource_data": {"username": username, "is_superuser": is_superuser}})
 
-    mock_client.list_resources.return_value.json.return_value = {"count": len(controller_users), "results": list_results, "next": None}  # No pagination
-
-    # Mock get_resource to return the appropriate response for each ansible_id
-    def mock_get_resource(ansible_id):
-        mock_response = Mock()
-        mock_response.json.return_value = get_resource_responses[ansible_id]
-        return mock_response
-
-    mock_client.get_resource.side_effect = mock_get_resource
+    mock_client.list_resources.return_value.json.return_value = {"count": len(controller_users), "results": list_results, "next": None}
 
     with patch('aap_gateway_api.utils.resources_client.GWResourceAPIClient', return_value=mock_client):
         if expected_errors:
@@ -1747,6 +1788,161 @@ def test_ensure_controller_gateway_superusers_scenarios(
         output = captured.out + captured.err
         for expected_msg in expected_output:
             assert expected_msg in output, f"Expected message '{expected_msg}' not found in output"
+
+
+# =============================================================================
+# Tests for _collect_controller_superusers helper function
+# =============================================================================
+
+
+@pytest.fixture
+def mock_controller_client(service_api_route_controller):
+    """Mock GWResourceAPIClient for _collect_controller_superusers tests.
+
+    Yields (mock_client, run) where run(page_data, resource_data, user) calls
+    _collect_controller_superusers with the mock wired up.
+    page_data: dict mapping page number -> {"results": [...], "next": ...}
+    resource_data: dict mapping ansible_id -> detail response dict
+    """
+    mock_client = Mock()
+
+    def run(page_data, resource_data, admin_user):
+        def mock_list_resources(filters=None):
+            page = filters["page"]
+            response = page_data[page].copy()
+            # Merge resource_data into list results so the bulk-fetch path works
+            response["results"] = [{**item, **resource_data.get(item["ansible_id"], {})} for item in response["results"]]
+            mock_response = Mock()
+            mock_response.json.return_value = response
+            return mock_response
+
+        mock_client.list_resources.side_effect = mock_list_resources
+
+        cmd = MigrateCommand()
+        with patch('aap_gateway_api.utils.resources_client.GWResourceAPIClient', return_value=mock_client):
+            return cmd._collect_controller_superusers(service_api_route_controller, admin_user)
+
+    yield mock_client, run
+
+
+@pytest.mark.django_db
+def test_collect_controller_superusers_single_page(admin_user, mock_controller_client):
+    """Test _collect_controller_superusers returns superuser usernames from a single page of results."""
+    mock_client, run = mock_controller_client
+
+    page_data = {
+        1: {"results": [{"ansible_id": "id-1"}, {"ansible_id": "id-2"}, {"ansible_id": "id-3"}], "next": None},
+    }
+    resource_data = {
+        "id-1": {"resource_data": {"username": "super_admin", "is_superuser": True}},
+        "id-2": {"resource_data": {"username": "regular_user", "is_superuser": False}},
+        "id-3": {"resource_data": {"username": "another_super", "is_superuser": True}},
+    }
+
+    result = run(page_data, resource_data, admin_user)
+
+    assert result == {"super_admin", "another_super"}
+
+
+@pytest.mark.django_db
+def test_collect_controller_superusers_pagination(admin_user, mock_controller_client):
+    """Test _collect_controller_superusers handles paginated API responses correctly."""
+    mock_client, run = mock_controller_client
+
+    page_data = {
+        1: {"results": [{"ansible_id": "id-1"}], "next": "http://example.com/page=2"},
+        2: {"results": [{"ansible_id": "id-2"}], "next": None},
+    }
+    resource_data = {
+        "id-1": {"resource_data": {"username": "super1", "is_superuser": True}},
+        "id-2": {"resource_data": {"username": "super2", "is_superuser": True}},
+    }
+
+    result = run(page_data, resource_data, admin_user)
+
+    assert result == {"super1", "super2"}
+    mock_client.list_resources.assert_any_call(filters={"content_type__resource_type__name": "shared.user", "extra_fields": "resource_data", "page": 1})
+    mock_client.list_resources.assert_any_call(filters={"content_type__resource_type__name": "shared.user", "extra_fields": "resource_data", "page": 2})
+    assert mock_client.list_resources.call_count == 2
+
+
+@pytest.mark.django_db
+def test_collect_controller_superusers_no_superusers(admin_user, mock_controller_client):
+    """Test _collect_controller_superusers returns empty set when no superusers exist."""
+    _, run = mock_controller_client
+
+    page_data = {
+        1: {"results": [{"ansible_id": "id-1"}, {"ansible_id": "id-2"}], "next": None},
+    }
+    resource_data = {
+        "id-1": {"resource_data": {"username": "user1", "is_superuser": False}},
+        "id-2": {"resource_data": {"username": "user2", "is_superuser": False}},
+    }
+
+    result = run(page_data, resource_data, admin_user)
+
+    assert result == set()
+
+
+@pytest.mark.django_db
+def test_collect_controller_superusers_empty_results(admin_user, mock_controller_client):
+    """Test _collect_controller_superusers handles empty results."""
+    _, run = mock_controller_client
+
+    page_data = {
+        1: {"results": [], "next": None},
+    }
+
+    result = run(page_data, {}, admin_user)
+
+    assert result == set()
+
+
+# =============================================================================
+# Tests for _demote_extra_superusers pagination
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_demote_extra_superusers_pagination(admin_user, service_api_route_hub, capsys):
+    """Test _demote_extra_superusers handles paginated results and demotes correctly."""
+    cmd = MigrateCommand()
+    mock_client = Mock()
+
+    page_data = {
+        1: {
+            "results": [
+                {"ansible_id": "id-1", "resource_data": {"username": "extra_super", "is_superuser": True}},
+            ],
+            "next": "http://example.com/page=2",
+        },
+        2: {
+            "results": [
+                {"ansible_id": "id-2", "resource_data": {"username": "normal_user", "is_superuser": False}},
+            ],
+            "next": None,
+        },
+    }
+
+    def mock_list_resources(filters=None):
+        page = filters["page"]
+        mock_response = Mock()
+        mock_response.json.return_value = page_data[page]
+        return mock_response
+
+    mock_client.list_resources.side_effect = mock_list_resources
+    mock_client.update_resource.return_value = Mock()
+
+    gateway_superusers = {"admin"}
+
+    with patch('aap_gateway_api.utils.resources_client.GWResourceAPIClient', return_value=mock_client):
+        cmd._demote_extra_superusers(service_api_route_hub, gateway_superusers, admin_user)
+
+    mock_client.update_resource.assert_called_once()
+    assert mock_client.list_resources.call_count == 2
+
+    captured = capsys.readouterr()
+    assert "Demoted user 'extra_super'" in captured.out
 
 
 # =============================================================================

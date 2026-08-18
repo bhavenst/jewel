@@ -35,6 +35,8 @@ class TestServiceClusterSerializer:
             'health_check_unhealthy_threshold',
             'health_check_healthy_threshold',
             'healthy_panic_threshold',
+            'effective_health_check_timeout_seconds',
+            'effective_health_check_interval_seconds',
         ]
         for field in expected_fields:
             assert field in ServiceClusterSerializer.Meta.fields, f"Field {field} missing from Meta.fields"
@@ -158,3 +160,43 @@ class TestServiceClusterSerializer:
         assert serializer.is_valid(), serializer.errors
         cluster = serializer.save()
         assert cluster.healthy_panic_threshold == 25
+
+    @pytest.mark.parametrize(
+        "health_check_timeout,preference_timeout,expected",
+        [
+            (5, 30, 30),
+            (30, 15, 30),
+            (5, 5, 5),
+        ],
+        ids=["preference_higher", "field_higher", "equal"],
+    )
+    def test_effective_health_check_timeout_seconds(self, service_type, health_check_timeout, preference_timeout, expected, preference_manager):
+        cluster = ServiceCluster.objects.create(
+            name='Effective Timeout Cluster',
+            service_type=service_type,
+            health_check_timeout_seconds=health_check_timeout,
+        )
+        with preference_manager.set("proxy", "request_timeout", preference_timeout):
+            serializer = ServiceClusterSerializer(instance=cluster, context={'request': Mock(query_params={})})
+            assert serializer.data['effective_health_check_timeout_seconds'] == expected
+
+    @pytest.mark.parametrize(
+        "health_check_interval,health_check_timeout,preference_timeout,expected",
+        [
+            (10, 5, 30, 30),
+            (60, 5, 30, 60),
+        ],
+        ids=["interval_below_effective_timeout", "interval_above_effective_timeout"],
+    )
+    def test_effective_health_check_interval_seconds(
+        self, service_type, health_check_interval, health_check_timeout, preference_timeout, expected, preference_manager
+    ):
+        cluster = ServiceCluster.objects.create(
+            name='Effective Interval Cluster',
+            service_type=service_type,
+            health_check_timeout_seconds=health_check_timeout,
+            health_check_interval_seconds=health_check_interval,
+        )
+        with preference_manager.set("proxy", "request_timeout", preference_timeout):
+            serializer = ServiceClusterSerializer(instance=cluster, context={'request': Mock(query_params={})})
+            assert serializer.data['effective_health_check_interval_seconds'] == expected

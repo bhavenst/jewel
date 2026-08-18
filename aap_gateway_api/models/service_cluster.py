@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -9,6 +10,9 @@ from django.db import models
 from django.utils.translation import gettext as _
 
 from aap_gateway_api.models.service_type import DefaultServiceType, ServiceType
+from aap_gateway_api.utils.preferences import get_preference_value
+
+logger = logging.getLogger(__name__)
 
 
 class ServiceCluster(UniqueNamedCommonModel, AuditableModel):
@@ -64,7 +68,7 @@ class ServiceCluster(UniqueNamedCommonModel, AuditableModel):
     )
 
     health_check_interval_seconds = models.PositiveIntegerField(
-        default=10,
+        default=30,
         help_text=_("The time between health check requests."),
     )
 
@@ -187,6 +191,28 @@ class ServiceCluster(UniqueNamedCommonModel, AuditableModel):
             return f"{self.service_type.logout_path}"
         else:
             return None
+
+    def get_effective_health_check_timeout_seconds(self):
+        # AAP-85084: Custom 2.6 implementation. On devel/2.7 this also considers
+        # per-route request_timeout_seconds (from AAP-66486), but that feature was
+        # not backported to 2.6 — see AAP-66486 and AAP-85084 for context.
+        return max(
+            self.health_check_timeout_seconds,
+            get_preference_value('proxy', 'request_timeout'),
+        )
+
+    def get_effective_health_check_interval_seconds(self, effective_timeout=None):
+        if effective_timeout is None:
+            effective_timeout = self.get_effective_health_check_timeout_seconds()
+        effective_interval = max(self.health_check_interval_seconds, effective_timeout)
+        if effective_interval != self.health_check_interval_seconds:
+            logger.debug(
+                "Health check interval for cluster %s floored from %ds to %ds (effective timeout)",
+                self.name,
+                self.health_check_interval_seconds,
+                effective_interval,
+            )
+        return effective_interval
 
     @staticmethod
     def get_cluster_by_type(service_type: ServiceType | str):

@@ -1,6 +1,7 @@
 import pytest
 
 from aap_gateway_api.models import ServiceCluster, ServiceType
+from aap_gateway_api.models.service_type import DefaultServiceType
 
 
 @pytest.mark.parametrize(
@@ -46,3 +47,66 @@ def test_get_by_type(service_type, name):
 
     sc = ServiceCluster.get_cluster_by_type(st)
     assert sc.name == name
+
+
+class TestEffectiveHealthCheckTimeout:
+    @pytest.mark.parametrize(
+        "health_check_timeout,preference_timeout,expected",
+        [
+            (5, 30, 30),
+            (5, 15, 15),
+            (30, 15, 30),
+            (60, 30, 60),
+            (5, 5, 5),
+        ],
+        ids=[
+            "preference_higher_than_field",
+            "preference_higher_than_default",
+            "field_higher_than_preference",
+            "field_much_higher_than_preference",
+            "field_equals_preference",
+        ],
+    )
+    @pytest.mark.django_db
+    def test_effective_health_check_timeout_seconds(self, health_check_timeout, preference_timeout, expected, preference_manager):
+        st = ServiceType.objects.get(name=DefaultServiceType.EDA)
+        cluster = ServiceCluster.objects.create(
+            name="test-effective-timeout",
+            service_type=st,
+            health_check_timeout_seconds=health_check_timeout,
+        )
+        with preference_manager.set("proxy", "request_timeout", preference_timeout):
+            assert cluster.get_effective_health_check_timeout_seconds() == expected
+
+
+class TestEffectiveHealthCheckInterval:
+    @pytest.mark.parametrize(
+        "health_check_interval,health_check_timeout,preference_timeout,expected_interval",
+        [
+            (10, 5, 30, 30),
+            (30, 5, 30, 30),
+            (60, 5, 30, 60),
+            (0, 5, 30, 30),
+            (10, 40, 30, 40),
+        ],
+        ids=[
+            "interval_below_effective_timeout_uses_effective_timeout",
+            "interval_equals_effective_timeout",
+            "interval_above_effective_timeout_preserved",
+            "zero_interval_uses_effective_timeout",
+            "field_timeout_higher_than_preference_raises_floor",
+        ],
+    )
+    @pytest.mark.django_db
+    def test_effective_health_check_interval_seconds(
+        self, health_check_interval, health_check_timeout, preference_timeout, expected_interval, preference_manager
+    ):
+        st = ServiceType.objects.get(name=DefaultServiceType.EDA)
+        cluster = ServiceCluster.objects.create(
+            name="test-effective-interval",
+            service_type=st,
+            health_check_timeout_seconds=health_check_timeout,
+            health_check_interval_seconds=health_check_interval,
+        )
+        with preference_manager.set("proxy", "request_timeout", preference_timeout):
+            assert cluster.get_effective_health_check_interval_seconds() == expected_interval

@@ -581,3 +581,65 @@ class TestRoute:
         routes = route.get_xds_route_config()
         assert 'request_headers_to_remove' in routes[0]
         assert routes[0]['request_headers_to_remove'] == ['Subject']
+
+
+class TestEffectiveHealthCheckInXDS:
+    @pytest.mark.django_db
+    def test_xds_cluster_config_uses_effective_health_check_timeout(self, service_cluster_eda, preference_manager):
+        service_cluster_eda.health_checks_enabled = True
+        service_cluster_eda.health_check_timeout_seconds = 5
+        service_cluster_eda.save()
+        service_cluster_eda.nodes.set(
+            [
+                ServiceNode.objects.create(
+                    name="node-for-timeout-test",
+                    service_cluster=service_cluster_eda,
+                    address="10.0.0.1",
+                    tags="eda",
+                )
+            ]
+        )
+
+        seed_feature_flags()
+
+        with preference_manager.set("proxy", "request_timeout", 30):
+            route = ServiceAPIRoute(
+                gateway_path='/',
+                service_path='/path',
+                envoy_cluster_name='testing',
+                service_cluster=service_cluster_eda,
+            )
+            route.node_tags = "eda"
+            cluster_cfg = route.get_xds_cluster_config()
+            assert cluster_cfg["health_checks"][0]["timeout"] == "30s"
+
+    @pytest.mark.django_db
+    def test_xds_cluster_config_uses_effective_health_check_interval(self, service_cluster_eda, preference_manager):
+        service_cluster_eda.health_checks_enabled = True
+        service_cluster_eda.health_check_timeout_seconds = 5
+        service_cluster_eda.health_check_interval_seconds = 10
+        service_cluster_eda.save()
+        service_cluster_eda.nodes.set(
+            [
+                ServiceNode.objects.create(
+                    name="node-for-interval-test",
+                    service_cluster=service_cluster_eda,
+                    address="10.0.0.1",
+                    tags="eda",
+                )
+            ]
+        )
+
+        seed_feature_flags()
+
+        with preference_manager.set("proxy", "request_timeout", 30):
+            route = ServiceAPIRoute(
+                gateway_path='/',
+                service_path='/path',
+                envoy_cluster_name='testing',
+                service_cluster=service_cluster_eda,
+            )
+            route.node_tags = "eda"
+            cluster_cfg = route.get_xds_cluster_config()
+            assert cluster_cfg["health_checks"][0]["timeout"] == "30s"
+            assert cluster_cfg["health_checks"][0]["interval"] == "30s"

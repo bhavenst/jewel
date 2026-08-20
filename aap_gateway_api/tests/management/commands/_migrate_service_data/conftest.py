@@ -90,6 +90,26 @@ def setup_empty_assignment_mocks(mock_client):
     mock_client.list_team_assignments.return_value = empty_team_resp
 
 
+def already_synced_unmigrated_response(filters):
+    """Return a mock response for _is_service_already_synced's combined query, or None.
+
+    That check uses content_type__resource_type__name__in rather than a per-type
+    name filter. A non-empty unmigrated page makes already_synced return False
+    (proceed with migration) without consuming per-type call counters.
+    """
+    if filters and "content_type__resource_type__name__in" in filters:
+        return Mock(json=lambda: {"count": 1, "results": [{"name": "unmigrated", "resource_type": "shared.user"}]})
+    return None
+
+
+def setup_successful_bulk_update(mock_client, updated=1):
+    """Stub bulk_update_resources with a successful HTTP 200 response."""
+    mock_bulk_resp = Mock(status_code=200)
+    mock_bulk_resp.json.return_value = {"updated": updated, "errors": []}
+    mock_client.bulk_update_resources.return_value = mock_bulk_resp
+    return mock_bulk_resp
+
+
 def setup_basic_service_client_mocks(mock_client, service_api, admin_user, service_id=None, service_type="controller"):
     """Helper function to setup basic service client mocks with common configuration"""
     mock_client.service = service_api
@@ -101,6 +121,7 @@ def setup_basic_service_client_mocks(mock_client, service_api, admin_user, servi
 
     setup_role_api_mocks(mock_client)
     setup_empty_assignment_mocks(mock_client)
+    setup_successful_bulk_update(mock_client)
 
 
 @pytest.fixture

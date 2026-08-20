@@ -15,7 +15,12 @@ from django.core.management import call_command
 
 from aap_gateway_api.management.commands.migrate_service_data import Command as MigrateCommand
 from aap_gateway_api.models import MigratedUserMetadata, Organization, User
-from aap_gateway_api.tests.management.commands._migrate_service_data.conftest import SEP_CHAR, assert_all_resources_synced, setup_basic_service_client_mocks
+from aap_gateway_api.tests.management.commands._migrate_service_data.conftest import (
+    SEP_CHAR,
+    already_synced_unmigrated_response,
+    assert_all_resources_synced,
+    setup_basic_service_client_mocks,
+)
 
 
 @pytest.mark.django_db(transaction=True)
@@ -628,15 +633,18 @@ def test_use_controller_password_flag_correction_for_existing_users(
         call_counts = {"shared.organization": 0, "shared.team": 0, "shared.user": 0}
 
         def mock_list_resources_response(*args, **kwargs):
-            filters = kwargs.get('filters', {})
+            filters = kwargs.get('filters') or {}
+            already_synced = already_synced_unmigrated_response(filters)
+            if already_synced is not None:
+                return already_synced
+
             resource_type = filters.get('content_type__resource_type__name')
 
             if resource_type == 'shared.user':
-                # Call 1: _is_service_already_synced (return unmigrated so migration proceeds)
-                # Call 2: correction processing query (return the user resource)
-                # Call 3+: migration loop (return empty)
+                # Call 1: correction processing query (return the user resource)
+                # Call 2+: migration loop (return empty)
                 call_counts['shared.user'] += 1
-                if call_counts['shared.user'] <= 2:
+                if call_counts['shared.user'] == 1:
                     return Mock(json=lambda: {"count": 1, "results": [mock_user_resource]})
                 else:
                     return Mock(json=lambda: {"count": 0, "results": []})
@@ -728,16 +736,19 @@ def test_use_controller_password_flag_integration_with_migration(admin_user, cap
         call_counts = {"shared.organization": 0, "shared.team": 0, "shared.user": 0}
 
         def mock_list_resources_response(*args, **kwargs):
-            filters = kwargs.get('filters', {})
+            filters = kwargs.get('filters') or {}
+            already_synced = already_synced_unmigrated_response(filters)
+            if already_synced is not None:
+                return already_synced
+
             resource_type = filters.get('content_type__resource_type__name')
 
             if resource_type == 'shared.user':
                 call_counts['shared.user'] += 1
-                # Call 1: _is_service_already_synced (return unmigrated so migration proceeds)
-                # Call 2: correction stage (return empty — we don't want correction here)
-                # Call 3: migration loop (return the user resource to be migrated)
-                # Call 4+: migration loop continuation (return empty)
-                if call_counts['shared.user'] in (1, 3):
+                # Call 1: correction stage (return empty — we don't want correction here)
+                # Call 2: migration loop (return the user resource to be migrated)
+                # Call 3+: migration loop continuation (return empty)
+                if call_counts['shared.user'] == 2:
                     return Mock(json=lambda: {"count": 1, "results": [mock_user_resource]})
                 else:
                     return Mock(json=lambda: {"count": 0, "results": []})
@@ -816,7 +827,11 @@ def test_use_controller_password_flag_only_for_user_resources(admin_user, servic
         call_counts = {"shared.organization": 0, "shared.user": 0}
 
         def mock_list_resources(*args, **kwargs):
-            filters = kwargs.get('filters', {})
+            filters = kwargs.get('filters') or {}
+            already_synced = already_synced_unmigrated_response(filters)
+            if already_synced is not None:
+                return already_synced
+
             resource_type = filters.get('content_type__resource_type__name')
 
             if resource_type == 'shared.organization':
@@ -874,8 +889,10 @@ def test_use_controller_password_flag_only_for_user_resources(admin_user, servic
 @pytest.mark.django_db(transaction=True)
 def test_use_controller_password_flag_not_set_for_existing_users_during_merge(admin_user, service_api_route_controller):
     """Test that use_controller_password flag handling works correctly when merging with existing users"""
-    # Create an existing user in Gateway (simulating a conflict scenario)
-    existing_user = User.objects.create(username="existing_user", use_controller_password=False)
+    # Existing Gateway user with a usable password: merge must not flip
+    # use_controller_password. Users with no password and no last_login are
+    # handled by the 2.4 -> 2.6 recovery path instead.
+    existing_user = User.objects.create(username="existing_user", use_controller_password=False, password="password")
 
     # Mock the resource client for controller
     with (
@@ -913,7 +930,11 @@ def test_use_controller_password_flag_not_set_for_existing_users_during_merge(ad
         call_counts = {"shared.organization": 0, "shared.team": 0, "shared.user": 0}
 
         def mock_list_resources_response(*args, **kwargs):
-            filters = kwargs.get('filters', {})
+            filters = kwargs.get('filters') or {}
+            already_synced = already_synced_unmigrated_response(filters)
+            if already_synced is not None:
+                return already_synced
+
             resource_type = filters.get('content_type__resource_type__name')
 
             if resource_type == 'shared.user':
@@ -1069,6 +1090,77 @@ def test_initialize_resource_sync_payloads():
 
     assert creation_kwargs == {"ansible_id": "test-aid-100"}
     assert service_resource == {"new_service_id": "gw-service-id-42"}
+
+
+def test_is_service_already_synced_without_system_username_filter():
+    """When SYSTEM_USERNAME is unset, unmigrated shared.user resources are not filtered out."""
+    cmd = MigrateCommand()
+    cmd.stdout = StringIO()
+    cmd.stderr = StringIO()
+    cmd.upstream_service_id = "upstream-svc"
+    cmd.resource_types_to_migrate = ["shared.user", "shared.organization"]
+
+    mock_client = Mock()
+
+    def list_resources_side_effect(filters=None):
+        resp = Mock()
+        filters = filters or {}
+        if filters.get("is_partially_migrated") == "false":
+            resp.json.return_value = {
+                "count": 1,
+                "results": [{"name": "_system", "resource_type": "shared.user", "ansible_id": "sys-id"}],
+            }
+        else:
+            resp.json.return_value = {"count": 10, "results": []}
+        return resp
+
+    mock_client.list_resources.side_effect = list_resources_side_effect
+    cmd.client = mock_client
+
+    with patch("aap_gateway_api.management.commands._migrate_service_data.resource_migration.settings") as mock_settings:
+        mock_settings.SYSTEM_USERNAME = ""
+        assert cmd._is_service_already_synced() is False
+
+
+def test_is_service_already_synced_empty_registry():
+    """An empty upstream registry is not treated as already synchronized."""
+    cmd = MigrateCommand()
+    cmd.stdout = StringIO()
+    cmd.stderr = StringIO()
+    cmd.upstream_service_id = "upstream-svc"
+    cmd.resource_types_to_migrate = ["shared.organization"]
+
+    mock_client = Mock()
+    mock_client.list_resources.return_value.json.return_value = {"count": 0, "results": []}
+    cmd.client = mock_client
+
+    assert cmd._is_service_already_synced() is False
+    assert "empty" in cmd.stderr.getvalue().lower()
+
+
+def test_is_service_already_synced_all_migrated():
+    """When no unmigrated resources remain and the registry is populated, return True."""
+    cmd = MigrateCommand()
+    cmd.stdout = StringIO()
+    cmd.stderr = StringIO()
+    cmd.upstream_service_id = "upstream-svc"
+    cmd.resource_types_to_migrate = ["shared.organization"]
+
+    mock_client = Mock()
+
+    def list_resources_side_effect(filters=None):
+        resp = Mock()
+        filters = filters or {}
+        if filters.get("is_partially_migrated") == "false":
+            resp.json.return_value = {"count": 0, "results": []}
+        else:
+            resp.json.return_value = {"count": 5, "results": []}
+        return resp
+
+    mock_client.list_resources.side_effect = list_resources_side_effect
+    cmd.client = mock_client
+
+    assert cmd._is_service_already_synced() is True
 
 
 def test_get_filtered_resources_excludes_system_user():

@@ -24,7 +24,7 @@ if ! pip show django-ansible-base > /dev/null 2>&1; then
     GIT_REQUIREMENTS="-r requirements/requirements_git.txt"
 fi
 
-# Install Django and related dependencies
-# Note: If GIT_REQUIREMENTS is empty, it's because local DAB was already installed
-pip install psycopg[binary] django-debug-toolbar==5.2 -r requirements/requirements.txt ${GIT_REQUIREMENTS} "$@"
-
+# Install hashed production requirements separately so pip's --require-hashes
+# mode does not conflict with unhashed test/dev dependencies.
+pip install --require-hashes --no-cache-dir -r requirements/requirements.txt
+pip install 'psycopg[binary]' django-debug-toolbar==5.2 ${GIT_REQUIREMENTS} "$@"

@@ -79,6 +79,10 @@ $> make git_hooks_config
 
 This make target is a dependency of `make docker-compose`, which is used to launch a local instance directly from this repository. In this case, the above command is not required.
 
+#### Development tools
+
+* **[uv](https://docs.astral.sh/uv/)**: Required for regenerating `requirements.txt` (`make requirements`). Install from https://docs.astral.sh/uv/.
+
 #### Pull request structure
 
 When opening a PR on Github web UI, you'll be presented with a PR template with sections and checklists to help you provide necessary information for the reviewers. This includes the change description, testing instructions, and any required follow-up actions.

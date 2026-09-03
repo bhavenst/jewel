@@ -1,0 +1,65 @@
+---
+# Resolve the quay.io/ansible/jewel-ci tag for a workflow run.
+#
+# merge_group.base_ref is refs/heads/<branch>; pull_request github.base_ref
+# and push github.ref_name are already the branch name. GitHub Actions
+# expressions have no replace() function, so the prefix is stripped in bash.
+#
+# Branch tags (stable-2.x) are published by build-ci-image.yml after a push
+# to that branch. Until the tag exists, fall back to devel so PR and merge
+# queue jobs can pull an image.
+name: Resolve CI image tag
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to turn into a jewel-ci tag (may include refs/heads/)
+        required: true
+        type: string
+    outputs:
+      tag:
+        description: jewel-ci image tag (branch name without refs/heads/)
+        value: ${{ jobs.resolve.outputs.tag }}
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve jewel-ci tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+    - id: tag
+      env:
+        REF: ${{ inputs.ref }}
+      run: |
+        set -euo pipefail
+        TAG="${REF#refs/heads/}"
+        if [ -z "$TAG" ]; then
+          echo "Unable to resolve jewel-ci image tag from ref" >&2
+          exit 1
+        fi
+        if [[ ! "$TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+          echo "Refused jewel-ci tag from ref: invalid characters" >&2
+          exit 1
+        fi
+
+        requested="$TAG"
+        if [ "$TAG" != "devel" ]; then
+          http_status=000
+          http_status="$(
+            curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+              -H 'Accept: application/vnd.docker.distribution.manifest.v2+json' \
+              "https://quay.io/v2/ansible/jewel-ci/manifests/${TAG}"
+          )" || http_status=000
+          if [ "$http_status" != "200" ]; then
+            echo "Tag ${TAG} not found on quay.io/ansible/jewel-ci (HTTP ${http_status}); falling back to devel"
+            TAG=devel
+          fi
+        fi
+
+        echo "Requested tag: ${requested}"
+        echo "Using tag: ${TAG}"
+        printf 'tag=%s\n' "$TAG" >> "$GITHUB_OUTPUT"

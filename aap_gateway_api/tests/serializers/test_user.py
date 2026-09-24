@@ -935,6 +935,7 @@ class TestUsernameValidation:
         assert response.data['username'] == 'testuser'
 
     def test_username_change_with_multiple_authenticators(self, admin_api_client, random_user, local_authenticator, ldap_authenticator):
+        initial_username = random_user.username
         AuthenticatorUser.objects.create(user=random_user, provider=local_authenticator, uid='local_username')
         AuthenticatorUser.objects.create(user=random_user, provider=ldap_authenticator, uid='ldap_username')
 
@@ -946,7 +947,7 @@ class TestUsernameValidation:
         assert "multiple new authenticators" in str(response.data['authenticators'][0])
 
         random_user.refresh_from_db()
-        assert random_user.username == random_user.username  # No change expected
+        assert random_user.username == initial_username
         assert AuthenticatorUser.objects.get(user=random_user, provider=local_authenticator).uid == 'local_username'
         assert AuthenticatorUser.objects.get(user=random_user, provider=ldap_authenticator).uid == 'ldap_username'
 
@@ -974,10 +975,11 @@ class TestUserUpdateRollbackScenario:
     def _test_rollback(self, admin_api_client, user, payload, initial_values):
         """Helper function to handle rollback tests."""
         url = get_relative_url('user-detail', kwargs={'pk': user.id})
+        transaction_context = transaction.atomic()
         with patch.object(UserSerializer, '_update_users_authenticators', side_effect=RuntimeError("Simulated failure")):
             with pytest.raises(RuntimeError):
-                with transaction.atomic():
-                    _ = admin_api_client.patch(url, payload)
+                with transaction_context:
+                    admin_api_client.patch(url, payload)
 
         self._assert_user_unchanged(user, initial_values)
 
@@ -1080,7 +1082,7 @@ class TestUserUpdateRollbackScenario:
         self._test_rollback(admin_api_client, user, payload, initial_values)
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture
 def local_user_bad_uid(admin_api_client, local_authenticator, randname):
     url = get_relative_url('user-list')
     username = randname("testuser")

@@ -68,9 +68,9 @@ class XDSView(APIView):
     authentication_classes = []
     permission_classes = []
 
-    def get_qs(self, request, ModelClass, name_field):
+    def get_qs(self, request, model_class, name_field):
         # This line (DISTINCT ON) is PostgreSQL-specific
-        qs = ModelClass.objects.order_by(name_field).distinct(name_field)
+        qs = model_class.objects.order_by(name_field).distinct(name_field)
 
         if names := request.POST.get("resource_names"):
             if len(names) == 1 and names[0] == "*":
@@ -79,11 +79,11 @@ class XDSView(APIView):
 
         return qs
 
-    def get_xds_response(self, ResourceType, resources):
+    def get_xds_response(self, resource_type, resources):
         response = DiscoveryResponse()
         for resource in resources:
             # load the Cluster object from our config dict
-            c = ResourceType()
+            c = resource_type()
             ParseDict(resource, c, descriptor_pool=symbol_database.Default().pool)
 
             # convert the Cluster message to Any
